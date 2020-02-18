@@ -150,13 +150,22 @@ async function manipulateHTMLFile(file) {
  * @param {string} [filepath]
  */
 async function manipulateHTMLContent(contents, filepath) {
-	let $ = cheerio.load(contents); // add jquery-like features
+	let $ = cheerio.load(contents, { decodeEntities: false }); // add jquery-like features
 	$ = stripFooter($);
 	// $ = addBanner($); // Don't add migration banner yet!
 	if (filepath) {
 		$ = addInternalRedirect(filepath, $);
 		$ = addExternalRedirect(filepath, $);
 	}
+	$('div[class="defaultnew syntaxhighlighter scroll-html-formatted-code"]')
+		.each(function (i, elem) {
+			try {
+				const code = `<pre><code>${$(this).text()}</code></pre>`.replace(/\t/g, ' ');
+				$(elem).replaceWith(code);
+			} catch (error) {
+				console.error(`failed to replace in ${filepath}`);
+			}
+		});
 	return htmlMinify($);
 }
 
