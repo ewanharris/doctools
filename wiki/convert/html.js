@@ -68,11 +68,11 @@ async function main() {
 		.option('-o, --output <dir>', 'Path to directory to place final files', path.join(__dirname, '../../build/guides'))
 		.option('-s, --show-edit-button', 'show an edit button in the output file', false)
 		.parse(process.argv);
-
-	await fs.ensureDir(program.output);
+	const options = program.opts();
+	await fs.ensureDir(options.output);
 	return Promise.all([
-		convertTOC(program.input, program.output),
-		convertHTMLFiles(program.input, program.output, program.showEditButton)
+		convertTOC(options.input, options.output),
+		convertHTMLFiles(options.input, options.output, options.showEditButton)
 	]);
 }
 

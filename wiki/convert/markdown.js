@@ -891,7 +891,7 @@ if (require.main === module) {
 			.option('-t, --target <vuepressOrHugo>', 'Whether to target Vuepress or Hugo markdown', /hugo|vuepress/, HUGO_TARGET)
 			.parse(process.argv);
 
-		return new Converter(program).convert();
+		return new Converter(program.opts()).convert();
 	}
 
 	main().then(() => process.exit(0)).catch(err => {
