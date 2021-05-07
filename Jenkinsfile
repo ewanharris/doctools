@@ -91,269 +91,271 @@ def MODULES = [
 //def nodeLabels = 'osx' // Need to use osx, because our sencha command zip is for osx right now!
 // we need to use macos 10.13/10.14 or else the install of jsduck dependency v8 fails
 def nodeLabels = 'osx-10.13 || osx-10.14'
-node(nodeLabels) { 
-	def SDK_DOC_DIR = '../titanium_mobile/apidoc'
-	def alloyDirs = '../alloy/Alloy/lib ../alloy/docs/apidoc ../alloy/Alloy/builtins'
-	def arrowDirs = '../arrow-orm/apidoc ../arrow-orm/lib/connector/capabilities/index.js ../arrow-orm/lib/collection.js ../arrow-orm/lib/connector.js ../arrow-orm/lib/error.js ../arrow-orm/lib/instance.js ../arrow-orm/lib/model.js ../arrow/apidoc ../arrow/lib/engines ../arrow/lib/api.js ../arrow/lib/arrow.js ../arrow/lib/block.js ../arrow/lib/middleware.js ../arrow/lib/router.js'
-	def windowsArgs = '-a ../titanium_mobile_windows/apidoc/WindowsOnly -a ../titanium_mobile_windows/apidoc/Titanium'
-	def moduleArgs = ''
+timestamps {
+	node(nodeLabels) { 
+		def SDK_DOC_DIR = '../titanium_mobile/apidoc'
+		def alloyDirs = '../alloy/Alloy/lib ../alloy/docs/apidoc ../alloy/Alloy/builtins'
+		def arrowDirs = '../arrow-orm/apidoc ../arrow-orm/lib/connector/capabilities/index.js ../arrow-orm/lib/collection.js ../arrow-orm/lib/connector.js ../arrow-orm/lib/error.js ../arrow-orm/lib/instance.js ../arrow-orm/lib/model.js ../arrow/apidoc ../arrow/lib/engines ../arrow/lib/api.js ../arrow/lib/arrow.js ../arrow/lib/block.js ../arrow/lib/middleware.js ../arrow/lib/router.js'
+		def windowsArgs = '-a ../titanium_mobile_windows/apidoc/WindowsOnly -a ../titanium_mobile_windows/apidoc/Titanium'
+		def moduleArgs = ''
 
-	nodejs(nodeJSInstallationName: "node ${nodeVersion}") {
-		ensureNPM('latest')
+		nodejs(nodeJSInstallationName: "node ${nodeVersion}") {
+			ensureNPM('latest')
 
-	// Can we do some stages like:
-	// Checkout
-	// Setup
-	//   - Wiki
-	//     - copy artifacts
-	//     - npm run wiki:unzip
-	//   - APIDocs
-	//     - clone a bunch of repos
-	// Build
-	//   - Vuepress
-	//     - npm run wiki:convert:vuepress
-	//     - various scripts/copying to update
-	//     - push to repo
-	//   - docs.appcelerator.com
-	//     - npm run wiki:redirects
-	//     - npm run wiki:convert:html
-	//     - docgen jsduck/JSDuck stuff
-	//     - SOLR stuff
-	//     - various asset copies/manipulation
-	//     - upload to SOLR
-	//     - push to appc_web_docs repo
-	//   - appc-open-docs
-	//     - npm run wiki:convert:markdown
-	//     - various scripts/copying to update
-	//     - push to repo
+		// Can we do some stages like:
+		// Checkout
+		// Setup
+		//   - Wiki
+		//     - copy artifacts
+		//     - npm run wiki:unzip
+		//   - APIDocs
+		//     - clone a bunch of repos
+		// Build
+		//   - Vuepress
+		//     - npm run wiki:convert:vuepress
+		//     - various scripts/copying to update
+		//     - push to repo
+		//   - docs.appcelerator.com
+		//     - npm run wiki:redirects
+		//     - npm run wiki:convert:html
+		//     - docgen jsduck/JSDuck stuff
+		//     - SOLR stuff
+		//     - various asset copies/manipulation
+		//     - upload to SOLR
+		//     - push to appc_web_docs repo
+		//   - appc-open-docs
+		//     - npm run wiki:convert:markdown
+		//     - various scripts/copying to update
+		//     - push to repo
 
-		sh 'mkdir -p doctools'
-		dir('doctools') {
-			// check out doctools
-			stage('Setup') {
-				checkout([
-						$class: 'GitSCM',
-						branches: scm.branches,
-						extensions: scm.extensions + [
-							[$class: 'CloneOption', depth: 0, honorRefspec: true, noTags: true, reference: '', shallow: true],
-							[$class: 'CleanBeforeCheckout']
-						],
-						userRemoteConfigs: scm.userRemoteConfigs
-					])
-				sh 'npm ci'
-			} // stage('Setup')
-
-			// run the wiki export/conversion
-			stage('Wiki') {
-				dir('wiki') {
-					copyArtifacts fingerprintArtifacts: true, projectName: '../wiki-export/master'
-				}
-
-				// Trigger Zoomin to sync up
-				if (pushToZoomin) {
-					withCredentials([sshUserPrivateKey(credentialsId: '190db4ff-79b3-459d-8cec-20048b3e91d5', keyFileVariable: 'SSH_KEY', passphraseVariable: 'PASSPHRASE', usernameVariable: 'USERNAME')]) {
-						// Use our special keypair installed on Jenkins and set up with zoomin
-						// (see https://axway.jiveon.com/docs/DOC-99675#jive_content_id_Connecting_to_Zoomins_SFTP_server for details on who to give public key to)
-						// Also, avoid prompt about the host key
-						sh 'npm run wiki:zoomin -- -i $SSH_KEY -oStrictHostKeyChecking=no'
-					}
-				}
-
-				// Generate the various formats: html for jsduck/docs.appc.com; markdown for appc-open-docs; markdown for vuepress
-				// build/guides for jsduck/docs.appc.com
-				// build/appc-open-docs for appc-open-docs
-				// build/titanium-docs for Vuepress
-				sh 'npm run wiki:post-export'
-			} // stage('Wiki')
-		} // dir('doctools')
-
-		// Then checkout modules/sdk/alloy/arrow
-		stage('APIDocs Repos') {
-			// Alloy
-			sparseCheckout('appcelerator', 'alloy', ALLOY_BRANCH, [ 'Alloy/lib/', 'Alloy/builtins/', '!Alloy/builtins/moment.js', '!Alloy/builtins/moment/', 'docs/apidoc/' ])
-
-			// Titanium Mobile
-			sparseCheckout('appcelerator', 'titanium_mobile', SDK_BRANCH, [ 'apidoc/', 'package.json', 'package-lock.json' ])
-
-			// Titanium Mobile Windows
-			sparseCheckout('appcelerator', 'titanium_mobile_windows', SDK_BRANCH, [ 'apidoc/', 'package.json', 'package-lock.json', 'Source' ])
-			dir('titanium_mobile_windows') {
-				// generate more apidocs on demand...
-				sh 'npm ci'
-				dir('apidoc') {
-					sh 'node ti_win_yaml'
-					sh 'rm Titanium/Map.yml'
-					sh 'rm -r Titanium/Map'
-				} // dir('titanium_mobile_windows/apidoc')
-			} // dir('titanium_mobile_windows')
-
-			// Titanium Docs (Vuepress)
-			shallowClone('titanium-docs', 'master')
-
-			// Arrow
-			sparseCheckout('appcelerator-archive', 'arrow', ARROW_BRANCH, [ 'apidoc/', 'lib/' ])
-
-			// Arrow ORM
-			sparseCheckout('appcelerator-archive', 'arrow-orm', ARROW_BRANCH, [ 'apidoc/', 'lib/' ])
-
-			// Check out a series of native modules
-			MODULES.each { mod ->
-				sparseCheckout('appcelerator-modules', mod, 'master', [ 'apidoc/ '])
-				moduleArgs += " ../${mod}/apidoc"
-			} // MODULES.each
-		} // stage('APIDocs Repos')
-
-		stage('APIDocs') {
-			dir('titanium-docs') {
-				sh 'npm ci'
-
-				// Copy converted wiki guides
-				sh 'npm run clean:guide'
-				// Remove sections we don't want in vuepress TODO: Have the markdown convert script do all the work to avoid this!
-				sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/AMPLIFY_Appcelerator_Services'
-				sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/AMPLIFY_Appcelerator_Services_Overview'
-				sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/AMPLIFY_CLI'
-				sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/AMPLIFY_Runtime_Services'
-				sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/Appcelerator_Dashboard'
-				sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/AMPLIFY_Dashboard'
-				sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/Axway_API_Builder'
-				sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/Mobile_Backend_Services'
-				sh 'cp -R ../doctools/build/titanium-docs/docs/guide docs/guide'
-				sh 'rm -rf docs/.vuepress/public/images/guide'
-				sh 'cp -R ../doctools/build/titanium-docs/docs/.vuepress/public/images/guide docs/.vuepress/public/images/guide'
-				sh 'rm -f docs/.vuepress/guide.json'
-				sh 'cp -R ../doctools/build/titanium-docs/docs/.vuepress/guide.json docs/.vuepress/guide.json'
-
-				// Re-generate API docs
-				// sh 'npm run clean:api'// TODO: just run: sh 'npm run clean:api', then do copies. Can't do this until we generate the api.json sidebar file
-				sh 'rm -rf docs/api'
-				sh 'git checkout -- docs/api/README.md' // add back the index page
-				sh "npm run docs:metadata -- ${moduleArgs}" // this will generate an api.json file from all of our apidocs
-				sh "npm run docs:migrate -- ${moduleArgs}" // this will generate new markdown files from the api.json file
-				// TODO: Update docs/.vuepress/api.json with generated files! This is the sidebar/navigation!
-
-				if (updateVuepress) {
-					// add all our changes to staged in git
-					sh 'git add docs'
-					def changes = getChangeString()
-					writeFile file: 'commit.txt', text: "docs: update based on latest apidocs and guides\n\n${changes}"
-					def status = sh returnStatus: true, script: 'git commit -F commit.txt' // commit it!
-					if (status == 0) {
-						pushGit(name: 'master') // push 'master' branch to github
-					}
-				} else {
-					// Archive the results
-					archiveArtifacts 'docs/'
-				}
-			}
-
+			sh 'mkdir -p doctools'
 			dir('doctools') {
-				sh 'mkdir -p dist'
-				// run docgen to generate build/titanium.js
-				// First we generate APIdocs for titanium_mobile, modules, windows
-				sh "npm run docgen -- -f jsduck -o ./build/ ${SDK_DOC_DIR} ${moduleArgs} ${windowsArgs}" // generates build/titanium.js
-				// TODO: Can we specify multiple formats at once and get solr output too? Looks like it does work (though the output for result filenames is busted and repeats last format)
-			}
-		} // stage('APIDocs')
+				// check out doctools
+				stage('Setup') {
+					checkout([
+							$class: 'GitSCM',
+							branches: scm.branches,
+							extensions: scm.extensions + [
+								[$class: 'CloneOption', depth: 0, honorRefspec: true, noTags: true, reference: '', shallow: true],
+								[$class: 'CleanBeforeCheckout']
+							],
+							userRemoteConfigs: scm.userRemoteConfigs
+						])
+					sh 'npm ci'
+				} // stage('Setup')
 
-		def outputDir = './dist/platform/latest'
-		// FIXME: Don't include solr index files in the dist/platform folder, appc_web_docs doesn't need them since we upload them in this job
-		def solrDir = "${outputDir}/../data/solr"
-		dir('doctools') {
-			// run jsduck on that to generate html output (as well as point it at Alloy/Arrow JS files)
-			stage('JSDuck') {
-				dir('apidocs') {
-					sh 'bundle install --path vendor/bundle' // install jsduck
+				// run the wiki export/conversion
+				stage('Wiki') {
+					dir('wiki') {
+						copyArtifacts fingerprintArtifacts: true, projectName: '../wiki-export/master'
+					}
+
+					// Trigger Zoomin to sync up
+					if (pushToZoomin) {
+						withCredentials([sshUserPrivateKey(credentialsId: '190db4ff-79b3-459d-8cec-20048b3e91d5', keyFileVariable: 'SSH_KEY', passphraseVariable: 'PASSPHRASE', usernameVariable: 'USERNAME')]) {
+							// Use our special keypair installed on Jenkins and set up with zoomin
+							// (see https://axway.jiveon.com/docs/DOC-99675#jive_content_id_Connecting_to_Zoomins_SFTP_server for details on who to give public key to)
+							// Also, avoid prompt about the host key
+							sh 'npm run wiki:zoomin -- -i $SSH_KEY -oStrictHostKeyChecking=no'
+						}
+					}
+
+					// Generate the various formats: html for jsduck/docs.appc.com; markdown for appc-open-docs; markdown for vuepress
+					// build/guides for jsduck/docs.appc.com
+					// build/appc-open-docs for appc-open-docs
+					// build/titanium-docs for Vuepress
+					sh 'npm run wiki:post-export'
+				} // stage('Wiki')
+			} // dir('doctools')
+
+			// Then checkout modules/sdk/alloy/arrow
+			stage('APIDocs Repos') {
+				// Alloy
+				sparseCheckout('appcelerator', 'alloy', ALLOY_BRANCH, [ 'Alloy/lib/', 'Alloy/builtins/', '!Alloy/builtins/moment.js', '!Alloy/builtins/moment/', 'docs/apidoc/' ])
+
+				// Titanium Mobile
+				sparseCheckout('appcelerator', 'titanium_mobile', SDK_BRANCH, [ 'apidoc/', 'package.json', 'package-lock.json' ])
+
+				// Titanium Mobile Windows
+				sparseCheckout('appcelerator', 'titanium_mobile_windows', SDK_BRANCH, [ 'apidoc/', 'package.json', 'package-lock.json', 'Source' ])
+				dir('titanium_mobile_windows') {
+					// generate more apidocs on demand...
+					sh 'npm ci'
+					dir('apidoc') {
+						sh 'node ti_win_yaml'
+						sh 'rm Titanium/Map.yml'
+						sh 'rm -r Titanium/Map'
+					} // dir('titanium_mobile_windows/apidoc')
+				} // dir('titanium_mobile_windows')
+
+				// Titanium Docs (Vuepress)
+				shallowClone('titanium-docs', 'master')
+
+				// Arrow
+				sparseCheckout('appcelerator-archive', 'arrow', ARROW_BRANCH, [ 'apidoc/', 'lib/' ])
+
+				// Arrow ORM
+				sparseCheckout('appcelerator-archive', 'arrow-orm', ARROW_BRANCH, [ 'apidoc/', 'lib/' ])
+
+				// Check out a series of native modules
+				MODULES.each { mod ->
+					sparseCheckout('appcelerator-modules', mod, 'master', [ 'apidoc/ '])
+					moduleArgs += " ../${mod}/apidoc"
+				} // MODULES.each
+			} // stage('APIDocs Repos')
+
+			stage('APIDocs') {
+				dir('titanium-docs') {
+					sh 'npm ci'
+
+					// Copy converted wiki guides
+					sh 'npm run clean:guide'
+					// Remove sections we don't want in vuepress TODO: Have the markdown convert script do all the work to avoid this!
+					sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/AMPLIFY_Appcelerator_Services'
+					sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/AMPLIFY_Appcelerator_Services_Overview'
+					sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/AMPLIFY_CLI'
+					sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/AMPLIFY_Runtime_Services'
+					sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/Appcelerator_Dashboard'
+					sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/AMPLIFY_Dashboard'
+					sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/Axway_API_Builder'
+					sh 'rm -rf ../doctools/build/titanium-docs/docs/guide/Mobile_Backend_Services'
+					sh 'cp -R ../doctools/build/titanium-docs/docs/guide docs/guide'
+					sh 'rm -rf docs/.vuepress/public/images/guide'
+					sh 'cp -R ../doctools/build/titanium-docs/docs/.vuepress/public/images/guide docs/.vuepress/public/images/guide'
+					sh 'rm -f docs/.vuepress/guide.json'
+					sh 'cp -R ../doctools/build/titanium-docs/docs/.vuepress/guide.json docs/.vuepress/guide.json'
+
+					// Re-generate API docs
+					// sh 'npm run clean:api'// TODO: just run: sh 'npm run clean:api', then do copies. Can't do this until we generate the api.json sidebar file
+					sh 'rm -rf docs/api'
+					sh 'git checkout -- docs/api/README.md' // add back the index page
+					sh "npm run docs:metadata -- ${moduleArgs}" // this will generate an api.json file from all of our apidocs
+					sh "npm run docs:migrate -- ${moduleArgs}" // this will generate new markdown files from the api.json file
+					// TODO: Update docs/.vuepress/api.json with generated files! This is the sidebar/navigation!
+
+					if (updateVuepress) {
+						// add all our changes to staged in git
+						sh 'git add docs'
+						def changes = getChangeString()
+						writeFile file: 'commit.txt', text: "docs: update based on latest apidocs and guides\n\n${changes}"
+						def status = sh returnStatus: true, script: 'git commit -F commit.txt' // commit it!
+						if (status == 0) {
+							pushGit(name: 'master') // push 'master' branch to github
+						}
+					} else {
+						// Archive the results
+						archiveArtifacts 'docs/'
+					}
 				}
-				sh "npm run jsduck ${alloyDirs} ${arrowDirs}"
-			} // stage('JSDuck')
 
-			// generate solr indices
-			stage('Solr') {
-				sh "mkdir -p ${solrDir}" // create output dir
-
-				// SDK/modules apidocs search index
-				sh "npm run docgen -- -f solr -o ./build/ ${SDK_DOC_DIR} ${moduleArgs} ${windowsArgs}"
-				sh "cp ./build/api_solr.json ${solrDir}/."
-
-				// Alloy search index
-				dir('apidocs') {
-					sh 'bundle exec jsduck --external "void,Callback,Backbone.Collection,Backbone.Model,Backbone.Events" --export full --meta-tags ./meta --pretty-json -o - ../../alloy/Alloy/lib ../../alloy/docs/apidoc > ../build/alloy.json'
-				}
-				sh "node apidocs/jsduck2json/alloy2solr.js ./build/alloy.json ${solrDir}/alloy_api.json"
-
-				// Arrow Search Index
-				// Looks like we just have a static version of arrow's output already?
-				sh "cp ./solr/arrow_api.json ${solrDir}/arrow_api.json"
-				// dir('apidocs') {
-				// 	sh 'bundle exec jsduck --export full --meta-tags ./meta --pretty-json -o - ../../arrow-orm/apidoc ../../arrow-orm/lib/collection.js ../../arrow-orm/lib/connector.js ../../arrow-orm/lib/error.js ../../arrow-orm/lib/instance.js ../../arrow-orm/lib/model.js ../../arrow-orm/lib/connector/capabilities/index.js ../../arrow/apidoc ../../arrow/lib/engines ../../arrow/lib/api.js ../../arrow/lib/arrow.js ../../arrow/lib/block.js ../../arrow/lib/middleware.js ../../arrow/lib/router.js > ./build/arrow.json'
-				// }
-				// sh "node apidocs/jsduck2json/alloy2solr.js ./build/arrow.json ${solrDir}/arrow_api.json"
-			} // stage('Solr')
-
-			// assemble final contents of dist/platform/latest
-			stage('Misc Assets') {
-				// TODO: Move this htmlguides stuff into the Wiki stage and have it push the files into the template dir?
-				// TIDOC-1327 Fix server errors
-				sh "cp -r wiki/htmlguides/images/icons ${outputDir}/resources/images/."
-
-				// Copy resources
-				// Workaround for new Confluence plugin
-				sh "cp -r wiki/htmlguides/attachments_* ${outputDir}/."
-
-				sh "cp -r wiki/htmlguides/css/common.css ${outputDir}/resources/css/common.css"
-				sh "cp -r wiki/htmlguides/images ${outputDir}/images"
-
-				// Copy API doc images
-				// TODO: Do this for the modules too!
-				// Copy all images inside the apidocs folder tree flattened into platform/latest
-				// This will allow images to live alongside the yml files
-				// (rather than separated into a distinct images folder with invalid relative path references)
-				sh "find ${SDK_DOC_DIR} -type f -iname '*.png' -exec cp \\{\\} ${outputDir}/ \\;"
-				sh "find ${SDK_DOC_DIR} -type f -iname '*.gif' -exec cp \\{\\} ${outputDir}/ \\;"
-
-				// Copy videos.json over? WTF?
-				// TODO: Remove? This seems unnecesary
-				sh 'cp videos.json build/videos.json'
-
-				// Copy landing
-				sh "cp -r ./landing ${outputDir}/.."
-
-				// Copy release-notes
-				sh "cp -r ./release-notes ${outputDir}/.."
-			} // stage('Misc Assets')
-
-			stage('Archive') {
-				dir('dist') {
-					archiveArtifacts 'platform/'
-				} // dir('doctools/dist')
-				dir('build') {
-					archiveArtifacts 'appc-open-docs/'
-				}
-			} // stage('Archive')
-		} // dir('doctools')
-
-		if (publish) {
-			stage('Publish') {
-				// when branch is "docs" check out appc_web_docs, then check in platform/latest to it!
-				updateDocsAppceleratorCom()
-				updateAppcOpenDocs()
-			} // stage('Publish')
-
-			// Upload the solr index files to the server!
-			stage('Solr Upload') {
 				dir('doctools') {
-					// api docs
-					sh "npm run solr:upload -- ${solrDir}/arrow_api.json"
-					sh "npm run solr:upload -- ${solrDir}/alloy_api.json"
-					sh "npm run solr:upload -- ${solrDir}/api_solr.json"
-					// guides / wiki
-					sh 'npm run solr:guides'
-				} // dir('doctools')
-			} // stage('Solr Upload')
-		} // if 'docs' branch
-	} // nodejs
-} // node
+					sh 'mkdir -p dist'
+					// run docgen to generate build/titanium.js
+					// First we generate APIdocs for titanium_mobile, modules, windows
+					sh "npm run docgen -- -f jsduck -o ./build/ ${SDK_DOC_DIR} ${moduleArgs} ${windowsArgs}" // generates build/titanium.js
+					// TODO: Can we specify multiple formats at once and get solr output too? Looks like it does work (though the output for result filenames is busted and repeats last format)
+				}
+			} // stage('APIDocs')
+
+			def outputDir = './dist/platform/latest'
+			// FIXME: Don't include solr index files in the dist/platform folder, appc_web_docs doesn't need them since we upload them in this job
+			def solrDir = "${outputDir}/../data/solr"
+			dir('doctools') {
+				// run jsduck on that to generate html output (as well as point it at Alloy/Arrow JS files)
+				stage('JSDuck') {
+					dir('apidocs') {
+						sh 'bundle install --path vendor/bundle' // install jsduck
+					}
+					sh "npm run jsduck ${alloyDirs} ${arrowDirs}"
+				} // stage('JSDuck')
+
+				// generate solr indices
+				stage('Solr') {
+					sh "mkdir -p ${solrDir}" // create output dir
+
+					// SDK/modules apidocs search index
+					sh "npm run docgen -- -f solr -o ./build/ ${SDK_DOC_DIR} ${moduleArgs} ${windowsArgs}"
+					sh "cp ./build/api_solr.json ${solrDir}/."
+
+					// Alloy search index
+					dir('apidocs') {
+						sh 'bundle exec jsduck --external "void,Callback,Backbone.Collection,Backbone.Model,Backbone.Events" --export full --meta-tags ./meta --pretty-json -o - ../../alloy/Alloy/lib ../../alloy/docs/apidoc > ../build/alloy.json'
+					}
+					sh "node apidocs/jsduck2json/alloy2solr.js ./build/alloy.json ${solrDir}/alloy_api.json"
+
+					// Arrow Search Index
+					// Looks like we just have a static version of arrow's output already?
+					sh "cp ./solr/arrow_api.json ${solrDir}/arrow_api.json"
+					// dir('apidocs') {
+					// 	sh 'bundle exec jsduck --export full --meta-tags ./meta --pretty-json -o - ../../arrow-orm/apidoc ../../arrow-orm/lib/collection.js ../../arrow-orm/lib/connector.js ../../arrow-orm/lib/error.js ../../arrow-orm/lib/instance.js ../../arrow-orm/lib/model.js ../../arrow-orm/lib/connector/capabilities/index.js ../../arrow/apidoc ../../arrow/lib/engines ../../arrow/lib/api.js ../../arrow/lib/arrow.js ../../arrow/lib/block.js ../../arrow/lib/middleware.js ../../arrow/lib/router.js > ./build/arrow.json'
+					// }
+					// sh "node apidocs/jsduck2json/alloy2solr.js ./build/arrow.json ${solrDir}/arrow_api.json"
+				} // stage('Solr')
+
+				// assemble final contents of dist/platform/latest
+				stage('Misc Assets') {
+					// TODO: Move this htmlguides stuff into the Wiki stage and have it push the files into the template dir?
+					// TIDOC-1327 Fix server errors
+					sh "cp -r wiki/htmlguides/images/icons ${outputDir}/resources/images/."
+
+					// Copy resources
+					// Workaround for new Confluence plugin
+					sh "cp -r wiki/htmlguides/attachments_* ${outputDir}/."
+
+					sh "cp -r wiki/htmlguides/css/common.css ${outputDir}/resources/css/common.css"
+					sh "cp -r wiki/htmlguides/images ${outputDir}/images"
+
+					// Copy API doc images
+					// TODO: Do this for the modules too!
+					// Copy all images inside the apidocs folder tree flattened into platform/latest
+					// This will allow images to live alongside the yml files
+					// (rather than separated into a distinct images folder with invalid relative path references)
+					sh "find ${SDK_DOC_DIR} -type f -iname '*.png' -exec cp \\{\\} ${outputDir}/ \\;"
+					sh "find ${SDK_DOC_DIR} -type f -iname '*.gif' -exec cp \\{\\} ${outputDir}/ \\;"
+
+					// Copy videos.json over? WTF?
+					// TODO: Remove? This seems unnecesary
+					sh 'cp videos.json build/videos.json'
+
+					// Copy landing
+					sh "cp -r ./landing ${outputDir}/.."
+
+					// Copy release-notes
+					sh "cp -r ./release-notes ${outputDir}/.."
+				} // stage('Misc Assets')
+
+				stage('Archive') {
+					dir('dist') {
+						archiveArtifacts 'platform/'
+					} // dir('doctools/dist')
+					dir('build') {
+						archiveArtifacts 'appc-open-docs/'
+					}
+				} // stage('Archive')
+			} // dir('doctools')
+
+			if (publish) {
+				stage('Publish') {
+					// when branch is "docs" check out appc_web_docs, then check in platform/latest to it!
+					updateDocsAppceleratorCom()
+					updateAppcOpenDocs()
+				} // stage('Publish')
+
+				// Upload the solr index files to the server!
+				stage('Solr Upload') {
+					dir('doctools') {
+						// api docs
+						sh "npm run solr:upload -- ${solrDir}/arrow_api.json"
+						sh "npm run solr:upload -- ${solrDir}/alloy_api.json"
+						sh "npm run solr:upload -- ${solrDir}/api_solr.json"
+						// guides / wiki
+						sh 'npm run solr:guides'
+					} // dir('doctools')
+				} // stage('Solr Upload')
+			} // if 'docs' branch
+		} // nodejs
+	} // node
+} // timestamps
 
 def updateAppcOpenDocs() {
 	shallowClone('appc-open-docs', 'master')
