@@ -96,7 +96,6 @@ timestamps {
 		def SDK_DOC_DIR = '../titanium_mobile/apidoc'
 		def alloyDirs = '../alloy/Alloy/lib ../alloy/docs/apidoc ../alloy/Alloy/builtins'
 		def arrowDirs = '../arrow-orm/apidoc ../arrow-orm/lib/connector/capabilities/index.js ../arrow-orm/lib/collection.js ../arrow-orm/lib/connector.js ../arrow-orm/lib/error.js ../arrow-orm/lib/instance.js ../arrow-orm/lib/model.js ../arrow/apidoc ../arrow/lib/engines ../arrow/lib/api.js ../arrow/lib/arrow.js ../arrow/lib/block.js ../arrow/lib/middleware.js ../arrow/lib/router.js'
-		def windowsArgs = '-a ../titanium_mobile_windows/apidoc/WindowsOnly -a ../titanium_mobile_windows/apidoc/Titanium'
 		def moduleArgs = ''
 
 		nodejs(nodeJSInstallationName: "node ${nodeVersion}") {
@@ -176,18 +175,6 @@ timestamps {
 				// Titanium Mobile
 				sparseCheckout('appcelerator', 'titanium_mobile', SDK_BRANCH, [ 'apidoc/', 'package.json', 'package-lock.json' ])
 
-				// Titanium Mobile Windows
-				sparseCheckout('appcelerator', 'titanium_mobile_windows', SDK_BRANCH, [ 'apidoc/', 'package.json', 'package-lock.json', 'Source' ])
-				dir('titanium_mobile_windows') {
-					// generate more apidocs on demand...
-					sh 'npm ci'
-					dir('apidoc') {
-						sh 'node ti_win_yaml'
-						sh 'rm Titanium/Map.yml'
-						sh 'rm -r Titanium/Map'
-					} // dir('titanium_mobile_windows/apidoc')
-				} // dir('titanium_mobile_windows')
-
 				// Titanium Docs (Vuepress)
 				shallowClone('titanium-docs', 'master')
 
@@ -251,8 +238,8 @@ timestamps {
 				dir('doctools') {
 					sh 'mkdir -p dist'
 					// run docgen to generate build/titanium.js
-					// First we generate APIdocs for titanium_mobile, modules, windows
-					sh "npm run docgen -- -f jsduck -o ./build/ ${SDK_DOC_DIR} ${moduleArgs} ${windowsArgs}" // generates build/titanium.js
+					// First we generate APIdocs for titanium_mobile, modules
+					sh "npm run docgen -- -f jsduck -o ./build/ ${SDK_DOC_DIR} ${moduleArgs}" // generates build/titanium.js
 					// TODO: Can we specify multiple formats at once and get solr output too? Looks like it does work (though the output for result filenames is busted and repeats last format)
 				}
 			} // stage('APIDocs')
@@ -274,7 +261,7 @@ timestamps {
 					sh "mkdir -p ${solrDir}" // create output dir
 
 					// SDK/modules apidocs search index
-					sh "npm run docgen -- -f solr -o ./build/ ${SDK_DOC_DIR} ${moduleArgs} ${windowsArgs}"
+					sh "npm run docgen -- -f solr -o ./build/ ${SDK_DOC_DIR} ${moduleArgs}"
 					sh "cp ./build/api_solr.json ${solrDir}/."
 
 					// Alloy search index
